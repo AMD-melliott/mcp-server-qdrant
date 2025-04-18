@@ -36,15 +36,6 @@ class BAAIEmbeddingProvider(EmbeddingProvider):
         )
         return embedding.tolist() if hasattr(embedding, 'tolist') else embedding[0].tolist()
 
-    def get_vector_name(self) -> str:
-        """
-        Return the name of the vector for the Qdrant collection.
-        This should match the vector name used when creating the collection.
-        """
-        # Use a consistent naming scheme that includes the model name
-        model_short_name = self.model_name.split("/")[-1].lower()
-        return f"baai-{model_short_name}"
-
     def get_vector_size(self) -> int:
         """Get the size of the vector for the Qdrant collection."""
         # You might need to adjust this based on your specific BAAI model
