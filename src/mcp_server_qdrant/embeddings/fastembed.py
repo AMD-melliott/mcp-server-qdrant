@@ -49,3 +49,8 @@ class FastEmbedProvider(EmbeddingProvider):
             self.embedding_model._get_model_description(self.model_name)
         )
         return model_description.dim
+
+    def _get_vector_name(self) -> str:
+        """Get the default vector name for this provider."""
+        model_name = self.embedding_model.model_name.split("/")[-1].lower()
+        return f"fast-{model_name}"

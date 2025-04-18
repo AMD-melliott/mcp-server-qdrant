@@ -1,10 +1,13 @@
+import os
 from abc import ABC, abstractmethod
 from typing import List
 
 
 class EmbeddingProvider(ABC):
-    """Abstract base class for embedding providers."""
-
+    """
+    Abstract base class for embedding providers.
+    """
+    
     @abstractmethod
     async def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents into vectors."""
@@ -15,9 +18,20 @@ class EmbeddingProvider(ABC):
         """Embed a query into a vector."""
         pass
 
-    @abstractmethod
     def get_vector_name(self) -> str:
-        """Get the name of the vector for the Qdrant collection."""
+        """
+        Return the name of the vector for the Qdrant collection.
+        Can be overridden with an environment variable.
+        """
+        force_name = os.environ.get("FORCE_VECTOR_NAME")
+        if force_name:
+            return force_name
+        # If no forced name, use the provider's implementation
+        return self._get_vector_name()
+    
+    @abstractmethod
+    def _get_vector_name(self) -> str:
+        """Get the default vector name for this provider."""
         pass
 
     @abstractmethod

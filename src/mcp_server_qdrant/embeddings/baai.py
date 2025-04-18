@@ -58,3 +58,8 @@ class BAAIEmbeddingProvider(EmbeddingProvider):
             return sample_embedding.shape[1]
         else:
             return len(sample_embedding[0])
+
+    def _get_vector_name(self) -> str:
+        """Get the default vector name for this provider."""
+        model_short_name = self.model_name.split("/")[-1].lower()
+        return f"baai-{model_short_name}"

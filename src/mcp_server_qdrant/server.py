@@ -1,6 +1,6 @@
 from mcp_server_qdrant.mcp_server import QdrantMCPServer
 from mcp_server_qdrant.settings import (
-    CustomEmbeddingProviderSettings,
+    EmbeddingProviderSettings,
     QdrantSettings,
     ToolSettings,
 )
@@ -8,5 +8,5 @@ from mcp_server_qdrant.settings import (
 mcp = QdrantMCPServer(
     tool_settings=ToolSettings(),
     qdrant_settings=QdrantSettings(),
-    embedding_provider_settings=CustomEmbeddingProviderSettings(),
+    embedding_provider_settings=EmbeddingProviderSettings(),
 )
