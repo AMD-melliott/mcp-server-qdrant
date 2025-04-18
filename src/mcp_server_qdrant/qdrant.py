@@ -103,19 +103,31 @@ class QdrantConnector:
             return []
 
         # Embed the query
-        # ToDo: instead of embedding text explicitly, use `models.Document`,
-        # it should unlock usage of server-side inference.
-
         query_vector = await self._embedding_provider.embed_query(query)
         vector_name = self._embedding_provider.get_vector_name()
 
         # Search in Qdrant
-        search_results = await self._client.query_points(
-            collection_name=collection_name,
-            query=query_vector,
-            using=vector_name,
-            limit=limit,
-        )
+        try:
+            # First try with the vector name (for multi-vector collections)
+            search_results = await self._client.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                using=vector_name,
+                limit=limit,
+            )
+        except Exception as e:
+            # If that fails, try without specifying the vector name (for single unnamed vector collections)
+            print(f"Query with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+            try:
+                search_results = await self._client.query_points(
+                    collection_name=collection_name,
+                    query=query_vector,
+                    limit=limit,
+                )
+            except Exception as fallback_error:
+                # If both approaches fail, log the error and return empty results
+                print(f"Query without vector name also failed: {fallback_error}")
+                return []
 
         return [
             Entry(
