@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 
 class EmbeddingProvider(ABC):
@@ -38,3 +38,57 @@ class EmbeddingProvider(ABC):
     def get_vector_size(self) -> int:
         """Get the size of the vector for the Qdrant collection."""
         pass
+
+    async def search(
+        self, query: str, *, collection_name: Optional[str] = None, limit: int = 10
+    ) -> list[Entry]:
+        """
+        Find points in the Qdrant collection. If there are no entries found, an empty list is returned.
+        :param query: The query to use for the search.
+        :param collection_name: The name of the collection to search in, optional. If not provided,
+                                the default collection is used.
+        :param limit: The maximum number of entries to return.
+        :return: A list of entries found.
+        """
+        collection_name = collection_name or self._default_collection_name
+        collection_exists = await self._client.collection_exists(collection_name)
+        if not collection_exists:
+            return []
+
+        # Embed the query
+        # ToDo: instead of embedding text explicitly, use `models.Document`,
+        # it should unlock usage of server-side inference.
+
+        query_vector = await self._embedding_provider.embed_query(query)
+        vector_name = self._embedding_provider.get_vector_name()
+
+        # Search in Qdrant
+        try:
+            # First try with the vector name (for multi-vector collections)
+            search_results = await self._client.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                using=vector_name,
+                limit=limit,
+            )
+        except Exception as e:
+            # If that fails, try without specifying the vector name (for single unnamed vector collections)
+            logger.warning(f"Query with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+            try:
+                search_results = await self._client.query_points(
+                    collection_name=collection_name,
+                    query=query_vector,
+                    limit=limit,
+                )
+            except Exception as fallback_error:
+                # If both approaches fail, log the error and return empty results
+                logger.error(f"Query without vector name also failed: {fallback_error}")
+                return []
+
+        return [
+            Entry(
+                content=result.payload["document"],
+                metadata=result.payload.get("metadata"),
+            )
+            for result in search_results.points
+        ]
