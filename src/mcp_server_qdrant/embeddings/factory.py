@@ -13,5 +13,9 @@ def create_embedding_provider(settings: EmbeddingProviderSettings) -> EmbeddingP
         from mcp_server_qdrant.embeddings.fastembed import FastEmbedProvider
 
         return FastEmbedProvider(settings.model_name)
+    elif settings.provider_type == EmbeddingProviderType.BAAI:
+        from mcp_server_qdrant.embeddings.baai import BAAIEmbeddingProvider
+        
+        return BAAIEmbeddingProvider(settings.model_name)
     else:
         raise ValueError(f"Unsupported embedding provider: {settings.provider_type}")
