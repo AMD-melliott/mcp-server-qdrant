@@ -1,7 +1,10 @@
 import asyncio
+import logging
 from typing import List
 
 from mcp_server_qdrant.embeddings.base import EmbeddingProvider
+
+logger = logging.getLogger(__name__)
 
 class BAAIEmbeddingProvider(EmbeddingProvider):
     """
@@ -10,19 +13,19 @@ class BAAIEmbeddingProvider(EmbeddingProvider):
     """
 
     def __init__(self, model_name: str):
-        print(f"Initializing BAAI embedding provider with model: {model_name}")
+        logger.info(f"Initializing BAAI embedding provider with model: {model_name}")
         self.model_name = model_name
         # Import BAAI embeddings library here to avoid importing it globally
         try:
-            print("About to load FlagModel...")
+            logger.debug("Loading FlagModel...")
             from FlagEmbedding import FlagModel
-            print("Imported FlagEmbedding, creating model instance...")
+            logger.debug("FlagEmbedding imported, creating model instance...")
             self.embedding_model = FlagModel(model_name, use_fp16=True)
-            print("FlagModel loaded successfully")
+            logger.info("FlagModel loaded successfully")
         except ImportError:
             raise ImportError("Please install the FlagEmbedding package: pip install FlagEmbedding")
         except Exception as e:
-            print(f"Error loading FlagModel: {e}")
+            logger.error(f"Error loading FlagModel: {e}")
             raise
 
     async def embed_documents(self, documents: List[str]) -> List[List[float]]:

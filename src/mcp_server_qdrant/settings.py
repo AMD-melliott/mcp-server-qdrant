@@ -61,3 +61,4 @@ class QdrantSettings(BaseSettings):
     )
     search_limit: int = Field(default=10, validation_alias="QDRANT_SEARCH_LIMIT")
     read_only: bool = Field(default=False, validation_alias="QDRANT_READ_ONLY")
+    log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")

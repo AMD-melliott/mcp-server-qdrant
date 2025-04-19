@@ -151,16 +151,11 @@ class QdrantConnector:
         for result in search_results.points:
             payload = result.payload or {}
             
-            # Debug: Print the payload for debugging
-            print(f"Processing result with score: {result.score}")
-            print(f"Payload: {payload}")
-            print(f"Payload keys: {list(payload.keys())}")
+            # Replace excessive debug prints with a single log message at debug level
+            logger.debug(f"Processing search result with score: {result.score}")
             
             # Handle missing document field or alternative field names
             content = payload.get("document")
-            
-            # Debug: Print content search process
-            print(f"Found document field: {content is not None}")
             
             # If document field is missing, try other commonly used field names
             if content is None:
@@ -168,21 +163,18 @@ class QdrantConnector:
                 for field in ["text", "content", "page_content", "chunk"]:
                     if field in payload:
                         content = payload[field]
-                        print(f"Found content in field: {field}")
+                        logger.debug(f"Found content in field: {field}")
                         break
             
             # If still no content found, use a readable representation of the payload
             if content is None:
                 content = f"[No document content found. Available payload keys: {', '.join(payload.keys())}]"
-                print("No content field found in payload")
+                logger.debug("No content field found in payload")
             
-            # After extracting content, add this check
+            # After extracting content, convert to string if needed
             if content is not None and not isinstance(content, str):
-                print(f"Warning: Content is not a string, converting from type: {type(content)}")
+                logger.debug(f"Converting content from type {type(content)} to string")
                 content = str(content)
-            
-            # Debug: Print the final content we're using
-            print(f"Final content (truncated): {content[:100]}...")
             
             results.append(
                 Entry(
