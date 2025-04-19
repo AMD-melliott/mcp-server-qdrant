@@ -19,7 +19,7 @@ class Entry(BaseModel):
     content: str
     metadata: Optional[Metadata] = None
     vector: Optional[List[float]] = None
-    score: Optional[float]] = None
+    score: Optional[float] = None
 
 
 class QdrantConnector:
