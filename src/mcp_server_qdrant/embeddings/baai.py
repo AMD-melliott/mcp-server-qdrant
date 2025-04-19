@@ -10,13 +10,20 @@ class BAAIEmbeddingProvider(EmbeddingProvider):
     """
 
     def __init__(self, model_name: str):
+        print(f"Initializing BAAI embedding provider with model: {model_name}")
         self.model_name = model_name
         # Import BAAI embeddings library here to avoid importing it globally
         try:
+            print("About to load FlagModel...")
             from FlagEmbedding import FlagModel
+            print("Imported FlagEmbedding, creating model instance...")
             self.embedding_model = FlagModel(model_name, use_fp16=True)
+            print("FlagModel loaded successfully")
         except ImportError:
             raise ImportError("Please install the FlagEmbedding package: pip install FlagEmbedding")
+        except Exception as e:
+            print(f"Error loading FlagModel: {e}")
+            raise
 
     async def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents into vectors."""
