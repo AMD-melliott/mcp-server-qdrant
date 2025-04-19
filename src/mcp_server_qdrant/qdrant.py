@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set, Union, List
 
 from pydantic import BaseModel
 from qdrant_client import AsyncQdrantClient, models
@@ -16,9 +16,10 @@ class Entry(BaseModel):
     """
     A single entry in the Qdrant collection.
     """
-
     content: str
     metadata: Optional[Metadata] = None
+    vector: Optional[List[float]] = None
+    score: Optional[float]] = None
 
 
 class QdrantConnector:
@@ -47,6 +48,8 @@ class QdrantConnector:
         self._client = AsyncQdrantClient(
             location=qdrant_url, api_key=qdrant_api_key, path=qdrant_local_path
         )
+        # Cache to track collections with known vector name mismatches
+        self._collections_with_unnamed_vectors: Set[str] = set()
 
     async def get_collection_names(self) -> list[str]:
         """
@@ -65,6 +68,12 @@ class QdrantConnector:
         """
         collection_name = collection_name or self._default_collection_name
         assert collection_name is not None
+        
+        # Check if we already know this collection has unnamed vectors
+        if collection_name in self._collections_with_unnamed_vectors:
+            await self._store_with_unnamed_vector(entry, collection_name)
+            return
+            
         await self._ensure_collection_exists(collection_name)
 
         # Embed the document
@@ -84,9 +93,12 @@ class QdrantConnector:
                     )
                 ],
             )
+            logger.debug(f"Successfully stored entry using named vector: {vector_name}")
         except Exception as e:
             # If that fails, try with unnamed vector format (for single unnamed vector collections)
-            print(f"Upsert with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+            error_message = str(e).lower()
+            logger.warning(f"Upsert with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+            
             try:
                 await self._client.upsert(
                     collection_name=collection_name,
@@ -98,13 +110,38 @@ class QdrantConnector:
                         )
                     ],
                 )
+                # Remember this collection uses unnamed vectors
+                self._collections_with_unnamed_vectors.add(collection_name)
+                logger.info(f"Collection {collection_name} uses unnamed vectors, storing this preference")
             except Exception as fallback_error:
                 # If both approaches fail, log the error and re-raise
-                print(f"Upsert without vector name also failed: {fallback_error}")
+                logger.error(f"Upsert without vector name also failed: {fallback_error}")
                 raise
 
+    async def _store_with_unnamed_vector(self, entry: Entry, collection_name: str):
+        """Helper method to store an entry with unnamed vector format"""
+        await self._ensure_collection_exists(collection_name)
+        
+        # Embed the document
+        embeddings = await self._embedding_provider.embed_documents([entry.content])
+        payload = {"document": entry.content, "metadata": entry.metadata}
+        
+        await self._client.upsert(
+            collection_name=collection_name,
+            points=[
+                models.PointStruct(
+                    id=uuid.uuid4().hex,
+                    vector=embeddings[0],  # Direct vector without name
+                    payload=payload,
+                )
+            ],
+        )
+        logger.debug(f"Stored entry using unnamed vector in collection {collection_name}")
+
     async def search(
-        self, query: str, *, collection_name: Optional[str] = None, limit: int = 10
+        self, query: str, *, collection_name: Optional[str] = None, limit: int = 10,
+        offset: int = 0, score_threshold: Optional[float] = None, with_vectors: bool = False,
+        with_payload: Union[bool, List[str]] = True
     ) -> list[Entry]:
         """
         Find points in the Qdrant collection. If there are no entries found, an empty list is returned.
@@ -112,6 +149,12 @@ class QdrantConnector:
         :param collection_name: The name of the collection to search in, optional. If not provided,
                                 the default collection is used.
         :param limit: The maximum number of entries to return.
+        :param offset: The number of entries to skip (for pagination).
+        :param score_threshold: Minimum similarity score threshold. Only entries with scores above 
+                                this threshold will be returned.
+        :param with_vectors: Whether to include vector data in the results.
+        :param with_payload: Whether to include payload data in the results. Can be a boolean or 
+                             a list of payload field names to include.
         :return: A list of entries found.
         """
         collection_name = collection_name or self._default_collection_name
@@ -121,30 +164,46 @@ class QdrantConnector:
 
         # Embed the query
         query_vector = await self._embedding_provider.embed_query(query)
-        vector_name = self._embedding_provider.get_vector_name()
-
-        # Search in Qdrant
-        try:
-            # First try with the vector name (for multi-vector collections)
-            search_results = await self._client.query_points(
-                collection_name=collection_name,
-                query=query_vector,
-                using=vector_name,
-                limit=limit,
-            )
-        except Exception as e:
-            # If that fails, try without specifying the vector name (for single unnamed vector collections)
-            print(f"Query with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+        
+        # If we already know this collection uses unnamed vectors, skip the named vector attempt
+        if collection_name in self._collections_with_unnamed_vectors:
             try:
                 search_results = await self._client.query_points(
                     collection_name=collection_name,
                     query=query_vector,
                     limit=limit,
                 )
-            except Exception as fallback_error:
-                # If both approaches fail, log the error and return empty results
-                print(f"Query without vector name also failed: {fallback_error}")
+                logger.debug(f"Searched collection {collection_name} with unnamed vector format (from cache)")
+            except Exception as e:
+                logger.error(f"Search with unnamed vector failed: {e}")
                 return []
+        else:
+            # Try with named vector first
+            vector_name = self._embedding_provider.get_vector_name()
+            try:
+                # First try with the vector name (for multi-vector collections)
+                search_results = await self._client.query_points(
+                    collection_name=collection_name,
+                    query=query_vector,
+                    using=vector_name,
+                    limit=limit,
+                )
+            except Exception as e:
+                # If that fails, try without specifying the vector name (for single unnamed vector collections)
+                logger.warning(f"Query with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+                try:
+                    search_results = await self._client.query_points(
+                        collection_name=collection_name,
+                        query=query_vector,
+                        limit=limit,
+                    )
+                    # Remember this collection uses unnamed vectors for future queries
+                    self._collections_with_unnamed_vectors.add(collection_name)
+                    logger.info(f"Collection {collection_name} uses unnamed vectors, storing preference for future queries")
+                except Exception as fallback_error:
+                    # If both approaches fail, log the error and return empty results
+                    logger.error(f"Query without vector name also failed: {fallback_error}")
+                    return []
 
         # Process the results, handling potential missing keys in the payload
         results = []
@@ -176,12 +235,21 @@ class QdrantConnector:
                 logger.debug(f"Converting content from type {type(content)} to string")
                 content = str(content)
             
-            results.append(
-                Entry(
-                    content=content,
-                    metadata=payload.get("metadata"),
-                )
+            # Create entry with vector data and score if requested
+            entry = Entry(
+                content=content,
+                metadata=payload.get("metadata"),
             )
+            
+            # Add vector if available and requested
+            if with_vectors and hasattr(result, "vector"):
+                entry.vector = result.vector
+            
+            # Always include score when available
+            if hasattr(result, "score"):
+                entry.score = result.score
+            
+            results.append(entry)
 
         return results
 

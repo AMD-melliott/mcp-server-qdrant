@@ -62,3 +62,8 @@ class QdrantSettings(BaseSettings):
     search_limit: int = Field(default=10, validation_alias="QDRANT_SEARCH_LIMIT")
     read_only: bool = Field(default=False, validation_alias="QDRANT_READ_ONLY")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+
+    # Search related settings
+    search_score_threshold: Optional[float] = Field(default=None, validation_alias="QDRANT_SEARCH_SCORE_THRESHOLD")
+    search_with_vectors: bool = Field(default=False, validation_alias="QDRANT_SEARCH_WITH_VECTORS")
+    max_context_limit: int = Field(default=100, validation_alias="QDRANT_MAX_CONTEXT_LIMIT")

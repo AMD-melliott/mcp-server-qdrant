@@ -101,6 +101,9 @@ class QdrantMCPServer(FastMCP):
             ctx: Context,
             query: str,
             collection_name: str,
+            limit: int = None,
+            score_threshold: float = None,
+            with_vectors: bool = None,
         ) -> List[str]:
             """
             Find memories in Qdrant.
@@ -108,26 +111,45 @@ class QdrantMCPServer(FastMCP):
             :param query: The query to use for the search.
             :param collection_name: The name of the collection to search in, optional. If not provided,
                                     the default collection is used.
+            :param limit: Maximum number of results to return. If not provided, uses server default.
+            :param score_threshold: Minimum similarity score (0-1) for results. If not provided, uses server default.
+            :param with_vectors: Whether to include vector data in results. Default is False.
             :return: A list of entries found.
             """
             await ctx.debug(f"Finding results for query {query}")
             if collection_name:
-                await ctx.debug(
-                    f"Overriding the collection name with {collection_name}"
-                )
-
+                await ctx.debug(f"Overriding the collection name with {collection_name}")
+            
+            # Apply defaults from server settings if not provided by client
+            actual_limit = limit if limit is not None else self.qdrant_settings.search_limit
+            actual_score_threshold = score_threshold if score_threshold is not None else self.qdrant_settings.search_score_threshold
+            actual_with_vectors = with_vectors if with_vectors is not None else self.qdrant_settings.search_with_vectors
+            
+            # Enforce maximum limit to prevent abuse
+            if actual_limit > self.qdrant_settings.max_context_limit:
+                await ctx.debug(f"Limiting results to max_context_limit: {self.qdrant_settings.max_context_limit}")
+                actual_limit = self.qdrant_settings.max_context_limit
+            
             entries = await self.qdrant_connector.search(
                 query,
                 collection_name=collection_name,
-                limit=self.qdrant_settings.search_limit,
+                limit=actual_limit,
+                score_threshold=actual_score_threshold,
+                with_vectors=actual_with_vectors,
             )
+            
             if not entries:
                 return [f"No information found for the query '{query}'"]
+            
             content = [
                 f"Results for the query '{query}'",
             ]
+            
             for entry in entries:
-                content.append(self.format_entry(entry))
+                # Include score in the formatted output if available
+                score_info = f" (score: {entry.score:.4f})" if entry.score is not None else ""
+                content.append(f"{self.format_entry(entry)}{score_info}")
+            
             return content
 
         async def find_with_default_collection(
