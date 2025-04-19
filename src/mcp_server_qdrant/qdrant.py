@@ -68,23 +68,40 @@ class QdrantConnector:
         await self._ensure_collection_exists(collection_name)
 
         # Embed the document
-        # ToDo: instead of embedding text explicitly, use `models.Document`,
-        # it should unlock usage of server-side inference.
         embeddings = await self._embedding_provider.embed_documents([entry.content])
-
-        # Add to Qdrant
         vector_name = self._embedding_provider.get_vector_name()
         payload = {"document": entry.content, "metadata": entry.metadata}
-        await self._client.upsert(
-            collection_name=collection_name,
-            points=[
-                models.PointStruct(
-                    id=uuid.uuid4().hex,
-                    vector={vector_name: embeddings[0]},
-                    payload=payload,
+        
+        try:
+            # First try with named vector format (for multi-vector collections)
+            await self._client.upsert(
+                collection_name=collection_name,
+                points=[
+                    models.PointStruct(
+                        id=uuid.uuid4().hex,
+                        vector={vector_name: embeddings[0]},
+                        payload=payload,
+                    )
+                ],
+            )
+        except Exception as e:
+            # If that fails, try with unnamed vector format (for single unnamed vector collections)
+            print(f"Upsert with vector name '{vector_name}' failed: {e}. Trying without vector name.")
+            try:
+                await self._client.upsert(
+                    collection_name=collection_name,
+                    points=[
+                        models.PointStruct(
+                            id=uuid.uuid4().hex,
+                            vector=embeddings[0],  # Direct vector without name
+                            payload=payload,
+                        )
+                    ],
                 )
-            ],
-        )
+            except Exception as fallback_error:
+                # If both approaches fail, log the error and re-raise
+                print(f"Upsert without vector name also failed: {fallback_error}")
+                raise
 
     async def search(
         self, query: str, *, collection_name: Optional[str] = None, limit: int = 10
@@ -146,15 +163,24 @@ class QdrantConnector:
         if not collection_exists:
             # Create the collection with the appropriate vector size
             vector_size = self._embedding_provider.get_vector_size()
-
-            # Use the vector name as defined in the embedding provider
             vector_name = self._embedding_provider.get_vector_name()
-            await self._client.create_collection(
-                collection_name=collection_name,
-                vectors_config={
-                    vector_name: models.VectorParams(
+            
+            # For backward compatibility with existing unnamed vector collections
+            if not vector_name:  # If vector_name is empty, create unnamed vector collection
+                await self._client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=models.VectorParams(
                         size=vector_size,
                         distance=models.Distance.COSINE,
-                    )
-                },
-            )
+                    ),
+                )
+            else:  # Otherwise create named vector collection
+                await self._client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config={
+                        vector_name: models.VectorParams(
+                            size=vector_size,
+                            distance=models.Distance.COSINE,
+                        )
+                    },
+                )
