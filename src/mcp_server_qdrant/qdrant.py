@@ -146,13 +146,52 @@ class QdrantConnector:
                 print(f"Query without vector name also failed: {fallback_error}")
                 return []
 
-        return [
-            Entry(
-                content=result.payload["document"],
-                metadata=result.payload.get("metadata"),
+        # Process the results, handling potential missing keys in the payload
+        results = []
+        for result in search_results.points:
+            payload = result.payload or {}
+            
+            # Debug: Print the payload for debugging
+            print(f"Processing result with score: {result.score}")
+            print(f"Payload: {payload}")
+            print(f"Payload keys: {list(payload.keys())}")
+            
+            # Handle missing document field or alternative field names
+            content = payload.get("document")
+            
+            # Debug: Print content search process
+            print(f"Found document field: {content is not None}")
+            
+            # If document field is missing, try other commonly used field names
+            if content is None:
+                # Try common alternative field names for the content
+                for field in ["text", "content", "page_content", "chunk"]:
+                    if field in payload:
+                        content = payload[field]
+                        print(f"Found content in field: {field}")
+                        break
+            
+            # If still no content found, use a readable representation of the payload
+            if content is None:
+                content = f"[No document content found. Available payload keys: {', '.join(payload.keys())}]"
+                print("No content field found in payload")
+            
+            # After extracting content, add this check
+            if content is not None and not isinstance(content, str):
+                print(f"Warning: Content is not a string, converting from type: {type(content)}")
+                content = str(content)
+            
+            # Debug: Print the final content we're using
+            print(f"Final content (truncated): {content[:100]}...")
+            
+            results.append(
+                Entry(
+                    content=content,
+                    metadata=payload.get("metadata"),
+                )
             )
-            for result in search_results.points
-        ]
+
+        return results
 
     async def _ensure_collection_exists(self, collection_name: str):
         """
